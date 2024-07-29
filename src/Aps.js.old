@@ -1,0 +1,586 @@
+// src/App.js
+import React, { useRef, useEffect, useState } from "react";
+import { Canvas, useThree, extend } from "@react-three/fiber";
+import { Line } from "@react-three/drei";
+import { OrbitControls as ThreeOrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import * as THREE from "three";
+import { CSG } from "three-csg-ts";
+import "./App.css"; // CSS-Datei für das Styling
+
+extend({ OrbitControls: ThreeOrbitControls });
+
+function CustomCamera({ position, lookAt, fov = 75 }) {
+  const cameraRef = useRef();
+  const controlsRef = useRef();
+  const { set, gl } = useThree();
+
+  useEffect(() => {
+    if (cameraRef.current) {
+      cameraRef.current.fov = fov;
+      cameraRef.current.near = 0.1;
+      cameraRef.current.far = 50;
+      cameraRef.current.position.set(...position);
+      cameraRef.current.lookAt(...lookAt);
+      cameraRef.current.updateProjectionMatrix();
+      set({ camera: cameraRef.current });
+    }
+  }, [position, lookAt, fov, set]);
+
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.target.set(...lookAt);
+      controlsRef.current.update();
+    }
+  }, [lookAt, fov]);
+
+  return (
+    <>
+      <perspectiveCamera ref={cameraRef} />
+      {cameraRef.current && (
+        <orbitControls
+          ref={controlsRef}
+          args={[cameraRef.current, gl.domElement]}
+        />
+      )}
+    </>
+  );
+}
+
+function Rail() {
+  // Define the rail geometry
+  const railShape = new THREE.Shape();
+  railShape.moveTo(-0.5, 0);
+  railShape.lineTo(0.5, 0);
+  railShape.lineTo(0, 0.5);
+  railShape.lineTo(-0.5, 0);
+
+  const extrudeSettings = {
+    steps: 1,
+    depth: 20,
+    bevelEnabled: false,
+  };
+
+  const railGeometry = new THREE.ExtrudeGeometry(railShape, extrudeSettings);
+  const railMaterial = new THREE.MeshStandardMaterial({
+    color: "gray",
+    roughness: 0.6, // Adjust to make the surface rougher
+    metalness: 0.6, // Adjust to add some reflectivity
+  });
+  const rail = new THREE.Mesh(railGeometry, railMaterial);
+
+  // Position the rail
+  rail.position.y = -3.25; // Adjust based on the height of the stands
+  rail.position.z = -14; // Adjust based on the height of the stands
+
+  return <primitive object={rail} />;
+}
+
+function Slits({ d, w }) {
+  // Define the plate geometry
+  const plateGeometry = new THREE.BoxGeometry(1, 1, 0.01);
+  const plateMaterial = new THREE.MeshStandardMaterial({ color: "gray" });
+  const plate = new THREE.Mesh(plateGeometry, plateMaterial);
+
+  // Define the slit geometry
+  const slitGeometry = new THREE.BoxGeometry(w, 0.8, 0.1); // 80% der Höhe der Platte
+
+  // Create and position the slit meshes
+  const slit1 = new THREE.Mesh(slitGeometry);
+  slit1.position.set(-d / 2 - w / 2, 0, 0);
+  slit1.updateMatrix(); // Ensure the matrix is current
+
+  const slit2 = new THREE.Mesh(slitGeometry);
+  slit2.position.set(d / 2 + w / 2, 0, 0);
+  slit2.updateMatrix(); // Ensure the matrix is current
+
+  // Perform boolean operations to create the slits in the plate
+  const plateCSG = CSG.fromMesh(plate);
+  const slit1CSG = CSG.fromMesh(slit1);
+  const slit2CSG = CSG.fromMesh(slit2);
+
+  const resultCSG = plateCSG.subtract(slit1CSG).subtract(slit2CSG);
+  const result = CSG.toMesh(resultCSG, plate.matrix, plate.material);
+  result.geometry.computeVertexNormals(); // Ensure proper shading
+
+  // Create the stand (metal rod)
+  const standGeometry = new THREE.CylinderGeometry(0.05, 0.05, 2.5, 32);
+  const standMaterial = new THREE.MeshStandardMaterial({ color: "black" });
+  const stand = new THREE.Mesh(standGeometry, standMaterial);
+
+  const group = new THREE.Group();
+  group.add(result);
+  group.add(stand);
+  stand.position.set(0, -1.75, 0);
+
+  return <primitive object={group} />;
+}
+
+function Screen({ distance }) {
+  // Create the screen
+  const screenGeometry = new THREE.BoxGeometry(4.1, 4.1, 0.1);
+  const screenMaterial = new THREE.MeshStandardMaterial({ color: "white" });
+  const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+
+  // Create the stand (metal rod)
+  const standGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 32);
+  const standMaterial = new THREE.MeshStandardMaterial({ color: "black" });
+  const stand = new THREE.Mesh(standGeometry, standMaterial);
+  stand.position.set(0, -2.5, 0);
+
+  return (
+    <group position={[0, 0, -distance]}>
+      <primitive object={screen} />
+      <primitive object={stand} />
+    </group>
+  );
+}
+
+function ParticleSource() {
+  // Create the source box and cylinder
+  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const boxMaterial = new THREE.MeshStandardMaterial({ color: "red" });
+  const box = new THREE.Mesh(boxGeometry, boxMaterial);
+
+  const cylinderGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+  const cylinderMaterial = new THREE.MeshStandardMaterial({ color: "red" });
+  const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+  cylinder.position.set(0, 0, 0);
+  cylinder.rotation.x = Math.PI / 2;
+
+  // Create the stand (metal rod)
+  const standGeometry = new THREE.CylinderGeometry(0.05, 0.05, 2.5, 32);
+  const standMaterial = new THREE.MeshStandardMaterial({ color: "black" });
+  const stand = new THREE.Mesh(standGeometry, standMaterial);
+  stand.position.set(0, -1.5, 0);
+
+  return (
+    <group position={[0, 0, 2]}>
+      <primitive object={cylinder} />
+      <primitive object={stand} />
+    </group>
+  );
+}
+
+function IntensityBarChart({ intensityMap = {}, distance, binSize }) {
+  const bars = [];
+
+  const maxCount = Math.max(
+    ...Object.values(intensityMap).map((item) => item.count),
+    1
+  ); // Max count, at least 1 to avoid division by zero
+
+  Object.keys(intensityMap).forEach((key) => {
+    const bin = parseFloat(key);
+    const count = intensityMap[key].count || 0;
+    const normalizedHeight = (count / maxCount) * 4; // Normiere auf maximale Höhe von 4
+    bars.push(new THREE.Vector3(bin, normalizedHeight / 2, -distance + 0.1)); // Platziere am unteren Rand des Schirms
+  });
+
+  return (
+    <group>
+      {bars.map((bar, index) => (
+        <mesh key={index} position={bar}>
+          <boxGeometry args={[binSize, bar.y * 2, binSize]} />{" "}
+          {/* Verdopple die Höhe für die Box, da sie vom Mittelpunkt aus wächst */}
+          <meshStandardMaterial color="green" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function IntensityCurve({ lambda, d, w, L, distance }) {
+  const computeIntensity = (x) => {
+    const scaledD = d * 20;
+    const scaledW = w * 4;
+    const beta = (Math.PI * scaledW * x) / (lambda * distance);
+    const gamma = (Math.PI * scaledD * x) / (lambda * distance);
+    if (isNaN(beta) || isNaN(gamma) || beta === 0) return 1; // Vermeidung von NaN-Werten
+    const intensity =
+      Math.pow(Math.sin(beta) / beta, 2) * Math.pow(Math.cos(gamma), 2);
+    return intensity;
+  };
+
+  const points = [];
+  const resolution = 400;
+  for (let i = 0; i <= resolution; i++) {
+    const x = (i / resolution - 0.5) * 4;
+    const intensity = computeIntensity(x);
+    points.push(new THREE.Vector3(x, intensity * 4 - 2, -distance + 0.1)); // Skalierung für Visualisierung
+  }
+
+  return <Line points={points} color="red" lineWidth={2} />;
+}
+
+function InterferencePattern({ lambda, d, w, L, distance, particles }) {
+  const meshRef = useRef();
+  const { size } = useThree();
+
+  const particleCount = particles.length;
+  const positions = new Float32Array(particleCount * 3);
+
+  particles.forEach((particle, index) => {
+    positions.set([particle.x, particle.y, particle.z + 0.1], index * 3);
+  });
+
+  useEffect(() => {
+    if (meshRef.current) {
+      meshRef.current.geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(positions, 3)
+      );
+      meshRef.current.geometry.attributes.position.needsUpdate = true;
+    }
+  }, [particles]);
+
+  return (
+    <points ref={meshRef}>
+      <bufferGeometry attach="geometry">
+        <bufferAttribute
+          attach="attributes-position"
+          array={positions}
+          count={particleCount}
+          itemSize={3}
+          usage={THREE.DynamicDrawUsage}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        attach="material"
+        color="blue"
+        size={size.width * 0.000025}
+      />
+    </points>
+  );
+}
+
+function App() {
+  const [binSize, setbinSize] = useState(0.001);
+  const [w, setW] = useState(0.1);
+  const [d, setD] = useState(0.1);
+  const [lambda, setLambda] = useState(0.5);
+  const [distance, setDistance] = useState(3);
+  const [particles, setParticles] = useState([]);
+  const [intensityMap, setIntensityMap] = useState({});
+  const [showBarChart, setShowBarChart] = useState(false);
+  const [showCurve, setShowCurve] = useState(false);
+  const [isFiring, setIsFiring] = useState(false); // Zustand für den Timer
+  const [cameraPosition, setCameraPosition] = useState([5, 2.5, 5]);
+  const [cameraLookAt, setCameraLookAt] = useState([0, 0, -0.5]);
+  const [cameraFov, setCameraFov] = useState(45);
+
+  const setCamera = (position, lookAt, fovCamera) => {
+    setCameraPosition(position);
+    setCameraLookAt(lookAt);
+    setCameraFov(fovCamera);
+  };
+
+  const scaleD = (value) => value * 0.0019 + 0.1; // Skaliert 100-2000nm auf 0.1-0.5
+  const scaleW = (value) => value * 0.0015 + 0.05; // Skaliert 100-2000nm auf 0.05-0.2
+
+  const initializeIntensityMap = () => {
+    let newIntensityMap = {};
+    for (let x = -2; x <= 2; x += binSize) {
+      const bin = x.toFixed(2);
+      newIntensityMap[bin] = { count: 0, intensity: computeIntensity(x) };
+    }
+    setParticles([]);
+    setIntensityMap({});
+    return newIntensityMap;
+  };
+
+  useEffect(() => {
+    setIntensityMap(initializeIntensityMap());
+  }, [d, w, lambda, distance]);
+
+  useEffect(() => {
+    let timer;
+    if (isFiring) {
+      timer = setInterval(() => {
+        fireParticles(100);
+      }, 1); // 100 Millisekunden Abstand
+    } else if (timer) {
+      clearInterval(timer);
+    }
+    return () => clearInterval(timer);
+  }, [isFiring]);
+
+  const computeIntensity = (x) => {
+    const scaledD = d * 20;
+    const scaledW = w * 4;
+    const beta = (Math.PI * scaledW * x) / (lambda * distance);
+    const gamma = (Math.PI * scaledD * x) / (lambda * distance);
+    if (isNaN(beta) || isNaN(gamma) || beta === 0) return 1; // Vermeidung von NaN-Werten
+    const intensity =
+      Math.pow(Math.sin(beta) / beta, 2) * Math.pow(Math.cos(gamma), 2);
+    return intensity;
+  };
+
+  const handleFire = () => {
+    fireParticles(1);
+  };
+
+  const handleFastFire = () => {
+    if (particles.length >= MAX_PARTICLES) {
+      setIsFiring(false);
+    }
+    setIsFiring(!isFiring);
+  };
+
+  const MAX_PARTICLES = 10000;
+  const THRESHOLD_SCALING_FACTOR = 0.5; // Passen Sie diesen Wert an, um die Schwelle zu ändern
+
+  const weightedRandomBin = (bins, newIntensityMap, totalParticles) => {
+    // Filter Bins based on the maximum number of particles allowed in each bin
+    const effectiveBins = bins.filter(bin => {
+      const maxParticlesInBin = newIntensityMap[bin].intensity * MAX_PARTICLES * THRESHOLD_SCALING_FACTOR;
+      return (newIntensityMap[bin].count || 0) < maxParticlesInBin;
+    });
+  
+    if (effectiveBins.length === 0) {
+      // If all bins have reached their maximum, return the bin with the minimum count
+      const minBin = bins.reduce((prev, curr) => {
+        return (newIntensityMap[prev].count || 0) < (newIntensityMap[curr].count || 0) ? prev : curr;
+      });
+      return minBin;
+    }
+  
+    const totalWeight = effectiveBins.reduce((total, bin) => {
+      const deviation = Math.abs((newIntensityMap[bin].count || 0) / totalParticles - newIntensityMap[bin].intensity);
+      return total + deviation;
+    }, 0);
+  
+    let randomWeight = Math.random() * totalWeight;
+  
+    for (const bin of effectiveBins) {
+      const deviation = Math.abs((newIntensityMap[bin].count || 0) / totalParticles - newIntensityMap[bin].intensity);
+      if (randomWeight < deviation) {
+        return bin;
+      }
+      randomWeight -= deviation;
+    }
+  
+    return effectiveBins[0]; // Fallback, should not be reached
+  };
+
+  const adjustParticles = (newParticles, newIntensityMap) => {
+    let adjustedParticles = [];
+
+    for (let i = 0; i < newParticles.length; i++) {
+      // Berechne Abweichungen und wähle die besten Segmente aus
+      let bins = Object.keys(newIntensityMap);
+      bins = bins.filter((bin) => newIntensityMap[bin] !== undefined); // Entferne undefined keys
+
+      for (let j = 0; j < 3; j++) {
+        const bin = weightedRandomBin(
+          bins,
+          newIntensityMap,
+          newParticles.length + particles.length
+        );
+        if (!newIntensityMap[bin]) {
+          newIntensityMap[bin] = {
+            count: 0,
+            intensity: computeIntensity(parseFloat(bin)),
+          };
+        }
+        const x = parseFloat(bin);
+        const y = (Math.random() - 0.5) * 4;
+        const z = -distance;
+        adjustedParticles.push({ x, y, z });
+        newIntensityMap[bin].count = (newIntensityMap[bin].count || 0) + 1;
+      }
+    }
+
+    setParticles((prevParticles) => [...prevParticles, ...adjustedParticles]);
+    setIntensityMap(newIntensityMap);
+  };
+
+  const fireParticles = (count) => {
+    let currentParticlesCount = particles.length;
+  
+    if (currentParticlesCount + count > MAX_PARTICLES) {
+      count = MAX_PARTICLES - currentParticlesCount;
+      setIsFiring(false);
+    }
+  
+    let newParticles = [];
+    let newIntensityMap = { ...intensityMap };
+  
+    for (let i = 0; i < count; i++) {
+      const x = (Math.random() - 0.5) * 4;
+      const y = (Math.random() - 0.5) * 4;
+      const z = -distance;
+      const bin = (Math.floor((x + 2) / binSize) * binSize - 2).toFixed(2);
+  
+      if (!newIntensityMap[bin]) {
+        newIntensityMap[bin] = { count: 0, intensity: computeIntensity(parseFloat(bin)) };
+      }
+  
+      newIntensityMap[bin].count += 1;
+      newParticles.push({ x, y, z });
+      currentParticlesCount += 1;
+  
+      if (currentParticlesCount >= MAX_PARTICLES) {
+        break;
+      }
+    }
+  
+    setParticles((prevParticles) => [...prevParticles, ...newParticles]);
+    setIntensityMap(newIntensityMap);
+  
+    adjustParticles(newParticles, newIntensityMap);
+  };
+
+  const handleClearParticles = () => {
+    setParticles([]);
+    setIntensityMap({});
+    initializeIntensityMap();
+  };
+
+  return (
+    <div className="container">
+      <div className="controls">
+        <label>
+          Spaltbreite w:
+          <input
+            type="range"
+            min="0.05"
+            max="0.2"
+            step="0.01"
+            value={w}
+            onChange={(e) => setW(parseFloat(e.target.value))}
+          />
+          {w}
+        </label>
+        <br />
+        <label>
+          Spaltabstand d:
+          <input
+            type="range"
+            min="0"
+            max="0.5"
+            step="0.01"
+            value={d}
+            onChange={(e) => setD(parseFloat(e.target.value))}
+          />
+          {d}
+        </label>
+        <br />
+        <label>
+          Spaltbreite w:
+          <input
+            type="range"
+            min="0.05"
+            max="0.2"
+            step="0.01"
+            value={w}
+            onChange={(e) => setW(parseFloat(e.target.value))}
+          />
+          {w}
+        </label>
+        <br />
+        <label>
+          Wellenlänge lambda:
+          <input
+            type="range"
+            min="0.1"
+            max="5"
+            step="0.1"
+            value={lambda}
+            onChange={(e) => setLambda(parseFloat(e.target.value))}
+          />
+          {lambda}
+        </label>
+        <br />
+        <label>
+          Abstand Schirm - Spalte:
+          <input
+            type="range"
+            min="1"
+            max="10"
+            step="0.1"
+            value={distance}
+            onChange={(e) => setDistance(parseFloat(e.target.value))}
+          />
+          {distance}
+        </label>
+        <br />
+        <button onClick={handleFire}>Abfeuern</button>
+        <button onClick={handleFastFire}>
+          {isFiring ? "Stop" : "Schnell Abfeuern"}
+        </button>
+        <button onClick={handleClearParticles}>Partikel löschen</button>
+        <br />
+        <label>
+          <input
+            type="checkbox"
+            checked={showBarChart}
+            onChange={(e) => setShowBarChart(e.target.checked)}
+          />
+          Zeige Balkendiagramm
+        </label>
+        <br />
+        <label>
+          <input
+            type="checkbox"
+            checked={showCurve}
+            onChange={(e) => setShowCurve(e.target.checked)}
+          />
+          Zeige Intensitätskurve
+        </label>
+        <br />
+        <button onClick={() => setCamera([5, 2.5, 5], [0, 0, -0.5], 45)}>
+          Position 1
+        </button>
+        <button onClick={() => setCamera([0, 0, 0.1], [0, 0, -3], 70)}>
+          Position 2
+        </button>
+        <button onClick={() => setCamera([0, 20, 0], [0, 0, 0], 50)}>
+          Position 3
+        </button>
+      </div>
+      <div className="canvas-container">
+        <Canvas>
+          <CustomCamera
+            position={cameraPosition}
+            lookAt={cameraLookAt}
+            fov={cameraFov}
+          />
+          <ambientLight intensity={1} />{" "}
+          <pointLight position={[0, 5, 5]} intensity={50} />
+          <ParticleSource />
+          <Slits d={d} w={w} />
+          <Rail />
+          <InterferencePattern
+            lambda={lambda}
+            d={d}
+            w={w}
+            L={distance}
+            distance={distance}
+            particles={particles}
+          />
+          {showCurve && (
+            <IntensityCurve
+              lambda={lambda}
+              d={d}
+              w={w}
+              L={distance}
+              distance={distance}
+            />
+          )}{" "}
+          {/* Zeige die Intensitätskurve, wenn die Checkbox aktiviert ist */}
+          {showBarChart && (
+            <IntensityBarChart
+              intensityMap={intensityMap}
+              distance={distance}
+              binSize={binSize}
+            />
+          )}{" "}
+          {/* Zeige das Balkendiagramm, wenn die Checkbox aktiviert ist */}
+          <Screen distance={distance} />
+        </Canvas>
+      </div>
+    </div>
+  );
+}
+
+export default App;
